@@ -26,9 +26,16 @@ label {
   margin: 20px;
 }
 
-input[type="text"] {
+
+input[type="text"],
+textarea {
   padding: 6px;
   font-size: 18px;
+}
+
+textarea {
+  font-family: 'Muli', sans-serif;
+  resize: vertical;
 }
 
 .button {
@@ -67,4 +74,12 @@ input[type="text"] {
 .existing-contract .complete {
   color: #5aa75a;
   text-align: center;
+}
+
+.confirmation-text {
+  color: green;
+}
+
+.existing-contracts .terms.custom-font {
+  font-weight: normal;
 }

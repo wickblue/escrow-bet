@@ -5,8 +5,14 @@ import Escrow from './Escrow';
 
 const provider = new ethers.providers.Web3Provider(window.ethereum);
 
-export async function approve(escrowContract, signer) {
-  const approveTxn = await escrowContract.connect(signer).approve();
+export async function settle(escrowContract, signer, bettorWin) {
+  const approveTxn = await escrowContract.connect(signer).settle(bettorWin);
+  await approveTxn.wait();
+}
+
+export async function match(escrowContract, signer, toStake) {
+  const toStakeVal = ethers.utils.parseUnits(toStake, 'wei');
+  const approveTxn = await escrowContract.connect(signer).matchStake({value: toStakeVal});
   await approveTxn.wait();
 }
 
@@ -26,31 +32,58 @@ function App() {
     getAccounts();
   }, [account]);
 
+  useEffect(() => {
+    // Retrieve saved contracts from localStorage on page load
+    const savedContracts = JSON.parse(localStorage.getItem('contracts')) || [];
+    setEscrows(savedContracts);
+  }, []);
+
   async function newContract() {
-    const beneficiary = document.getElementById('beneficiary').value;
+    const counterparty = document.getElementById('counterparty').value;
     const arbiter = document.getElementById('arbiter').value;
-    const value = ethers.BigNumber.from(document.getElementById('wei').value);
-    const escrowContract = await deploy(signer, arbiter, beneficiary, value);
+    const value = ethers.utils.parseEther(document.getElementById('ether').value);
+    const odds = document.getElementById('odds').value;
+    const toStake = ((value * odds) - value).toString();
+    const terms = document.getElementById('terms').value;
+    const escrowContract = await deploy(signer, arbiter, counterparty, toStake, value);
 
 
     const escrow = {
       address: escrowContract.address,
+      bettor: account,
       arbiter,
-      beneficiary,
+      counterparty,
+      odds,
+      toStake,
+      terms,
       value: value.toString(),
+      settlementOutcome: localStorage.getItem(escrowContract.address + '-settlement') || '',
+      isMatched: localStorage.getItem(escrowContract.address + '-isMatched') === 'true',
+      handleMatch: async () => {
+        await match(escrowContract, signer, toStake);
+        localStorage.setItem(escrowContract.address + '-isMatched', 'true');
+        escrow.isMatched = true;
+      },
+      
       handleApprove: async () => {
-        escrowContract.on('Approved', () => {
-          document.getElementById(escrowContract.address).className =
-            'complete';
-          document.getElementById(escrowContract.address).innerText =
-            "✓ It's been approved!";
-        });
+        await settle(escrowContract, signer, true);
 
-        await approve(escrowContract, signer);
+        localStorage.setItem(escrowContract.address + '-settlement', 'Bettor');
+        escrow.settlementOutcome = 'Bettor';
+      },
+
+      handleReject: async () => {
+        await settle(escrowContract, signer, false);
+        localStorage.setItem(escrowContract.address + '-settlement', 'Counterparty');
+        escrow.settlementOutcome = 'Counterparty';
       },
     };
 
-    setEscrows([...escrows, escrow]);
+    const updatedEscrows = [...escrows, escrow];
+    setEscrows(updatedEscrows);
+
+    // Save updated contracts to localStorage
+    localStorage.setItem('contracts', JSON.stringify(updatedEscrows));
   }
 
   return (
@@ -63,13 +96,22 @@ function App() {
         </label>
 
         <label>
-          Beneficiary Address
-          <input type="text" id="beneficiary" />
+          Counterparty Address
+          <input type="text" id="counterparty" />
         </label>
 
         <label>
-          Deposit Amount (in Wei)
-          <input type="text" id="wei" />
+          Deposit Amount (in Ether)
+          <input type="text" id="ether" />
+        </label>
+
+        <label>
+          Odds (in Decimal)
+          <input type="text" id="odds" />
+        </label>
+        <label>
+          Description and Terms
+          <textarea id="terms" rows="4" cols="50" />
         </label>
 
         <div
@@ -90,10 +132,35 @@ function App() {
 
         <div id="container">
           {escrows.map((escrow) => {
-            return <Escrow key={escrow.address} {...escrow} />;
+            return (
+              <Escrow
+                key={escrow.address}
+                {...escrow}
+                isMatched={escrow.isMatched}
+                settlementOutcome={escrow.settlementOutcome}
+                handleMatch={escrow.handleMatch}
+                handleApprove={escrow.handleApprove}
+                handleReject={escrow.handleReject}
+              />
+            );
           })}
         </div>
+        <div>
+          <div
+            className="button"
+            id="clear"
+            onClick={(e) => {
+              e.preventDefault();
+
+              setEscrows([]);
+            }}
+          >
+            Clear Contracts
+          </div>
+        </div>
       </div>
+
+
     </>
   );
 }
